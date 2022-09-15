@@ -1,0 +1,105 @@
+version: "3.9"
+services:
+  pg:
+    profiles:
+      - dev
+    image: porsager/postgres-dev
+    build:
+      context: .
+      dockerfile: .compose/dev/pg/Dockerfile
+      args:
+        POSTGRES_UID: ${OWNER_UID}
+        POSTGRES_GID: ${OWNER_GID}
+        DEBIAN_VERSION: ${DEBIAN_VERSION}
+        POSTGRES_VERSION: ${POSTGRES_VERSION}
+    command: ["postgres"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    entrypoint: ["/wrap-entrypoint.sh"]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'pg_isready -U postgres'"]
+      interval: 1s
+      timeout: 1s
+      retries: 10
+    volumes:
+      - type: bind
+        source: tests/pg_hba.conf
+        target: /pg_hba.conf
+        read_only: true
+      - type: bind
+        source: .compose/dev/pg/docker-entrypoint-initdb.d
+        target: /docker-entrypoint-initdb.d
+        read_only: true
+      - type: bind
+        source: .compose/dev/pg/wrap-entrypoint.sh
+        target: /wrap-entrypoint.sh
+        read_only: true
+      - type: volume
+        source: pg-ssl
+        target: /ssl
+      - type: volume
+        source: pg-data
+        target: /var/postgresql/data
+      - type: volume
+        source: pg-socket
+        target: /var/run/postgresql
+
+  socat:
+    profiles:
+      - dev
+    image: alpine/socat
+    command: ["TCP-LISTEN:5433,fork,reuseaddr", "TCP:127.0.0.1:5432"]
+    network_mode: service:pg
+    healthcheck:
+      test: ["CMD-SHELL","socat /dev/null TCP:127.0.0.1:5433"]
+      interval: 1s
+      timeout: 1s
+      retries: 20
+    depends_on:
+      pg:
+        condition: service_healthy
+  node:
+    profiles:
+      - dev
+    working_dir: /home/node/postgres
+    network_mode: service:socat
+    volumes:
+      - type: bind
+        source: .
+        target: /home/node/postgres
+      - type: volume
+        source: pg-ssl
+        target: /ssl
+        read_only: true
+      - type: volume
+        source: deno-cache
+        target: /home/node/.cache/deno
+      - type: volume
+        source: pg-socket
+        target: /var/run/postgresql
+    build:
+      context: .
+      dockerfile: .compose/dev/node/Dockerfile
+      args:
+        NODE_UID: ${OWNER_UID}
+        NODE_GID: ${OWNER_GID}
+        NODE_VERSION: ${NODE_VERSION}
+        DEBIAN_VERSION: ${DEBIAN_VERSION}
+        DENO_VERSION: ${DENO_VERSION}
+        POSTGRES_VERSION: ${POSTGRES_VERSION}
+    environment:
+      PGUSER: postgres
+      PGSOCKET: /var/run/postgresql
+    image: porsager/node-dev
+    command: [ "npm","run", "test" ]
+    depends_on:
+      socat:
+        condition: service_healthy
+      pg:
+        condition: service_healthy
+volumes:
+  pg-socket:
+  pg-ssl:
+  pg-data:
+  deno-cache:
