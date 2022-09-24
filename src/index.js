@@ -15,7 +15,10 @@ import {
   kebab,
   fromPascal,
   fromCamel,
-  fromKebab
+  fromKebab,
+  escapeStringLiteral,
+  dollarQuoteStringLiteral,
+  serializeAsStringLiteral
 } from './types.js'
 
 import Connection from './connection.js'
@@ -36,6 +39,8 @@ Object.assign(Postgres, {
   fromPascal,
   fromCamel,
   fromKebab,
+  escapeStringLiteral,
+  dollarQuoteStringLiteral,
   BigInt: {
     to: 20,
     from: [20],
@@ -97,7 +102,8 @@ function Postgres(a, b) {
       unsafe,
       array,
       json,
-      file
+      file,
+      valueToStringLiteral : (x,nullString='',formatter) => serializeAsStringLiteral(x,options,nullString,formatter)
     })
 
     return sql
@@ -407,7 +413,8 @@ function parseOptions(a, b) {
     debug           : false,
     fetch_types     : true,
     publications    : 'alltables',
-    target_session_attrs: null
+    target_session_attrs: null,
+    inlineValueFormatter: escapeStringLiteral
   }
 
   return {

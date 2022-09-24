@@ -54,20 +54,22 @@ export class Query extends Promise {
     return this.canceller && (this.canceller(this), this.canceller = null)
   }
 
-  simple() {
+  simple(inlineValueFormatter) {
     this.options.simple = true
+    this.options.inlineParamValues = true
+    typeof inlineValueFormatter === 'function' && (this.options.inlineValueFormatter = inlineValueFormatter)
     this.options.prepare = false
     return this
   }
 
-  async readable() {
-    this.simple()
+  async readable(formatter) {
+    this.simple(formatter)
     this.streaming = true
     return this
   }
 
-  async writable() {
-    this.simple()
+  async writable(formatter) {
+    this.simple(formatter)
     this.streaming = true
     return this
   }

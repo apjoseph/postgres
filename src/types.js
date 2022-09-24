@@ -1,6 +1,6 @@
 import { Query } from './query.js'
 import { Errors } from './errors.js'
-
+import crypto from "crypto"
 export const types = {
   string: {
     to: 25,
@@ -22,7 +22,7 @@ export const types = {
   boolean: {
     to: 16,
     from: 16,
-    serialize: x => x === true ? 't' : 'f',
+    serialize: (x,o) => o.inlineValue ?  '' + x :  x === true ? 't' : 'f',
     parse: x => x === 't'
   },
   date: {
@@ -73,7 +73,7 @@ export class Builder extends NotTagged {
   }
 }
 
-export function handleValue(x, parameters, types, options) {
+function resolveParamInfo(x,options) {
   let value = x instanceof Parameter ? x.value : x
   if (value === undefined) {
     x instanceof Parameter
@@ -84,19 +84,47 @@ export function handleValue(x, parameters, types, options) {
       throw Errors.generic('UNDEFINED_VALUE', 'Undefined values are not allowed')
   }
 
-  return '$' + (types.push(
-    x instanceof Parameter
-      ? (parameters.push(x.value), x.array
-        ? x.array[x.type || inferType(x.value)] || x.type || firstIsString(x.value)
-        : x.type
-      )
-      : (parameters.push(x), inferType(x))
-  ))
+  const oid = x instanceof Parameter
+    ? x.array
+      ? x.array[x.type || inferType(x.value)] || x.type || firstIsString(x.value)
+      : x.type
+    : inferType(x)
+
+  return {value,oid}
+}
+
+export function serializeAsStringLiteral(x,options,nullString,formatter) {
+  const {value,oid} = resolveParamInfo(x,options)
+  if(value === null) return nullString
+  const serialize = options.serializers[oid]
+  if (!serialize) {
+    throw Errors.generic('MISSING_STRING_LITERAL_SERIALIZER', 'No string literal serializer found for oid ' + oid )
+  }
+  const sv = serialize(value,{inlineValue: true})
+
+  return (sv !== null)
+    ? (formatter)
+      ? formatter(sv)
+      : sv
+    : nullString
+
+}
+
+export function handleValue(x, parameters, types, options) {
+
+  const {nullString,inlineParamValues,inlineValueFormatter} = resolveParamSerializationContext(options)
+
+  if (inlineParamValues) return serializeAsStringLiteral(x,options,nullString,inlineValueFormatter)
+
+  const {value,oid} = resolveParamInfo(x,options)
+  parameters.push(value)
+  return '$' + (types.push(oid))
 }
 
 const defaultHandlers = typeHandlers(types)
 
 export function stringify(q, string, value, parameters, types, options) { // eslint-disable-line
+  options = {...options, serializationContext: resolveParamSerializationContext(options,q) }
   for (let i = 1; i < q.strings.length; i++) {
     string += (stringifyValue(string, value, parameters, types, options)) + q.strings[i]
     value = q.args[i]
@@ -104,6 +132,19 @@ export function stringify(q, string, value, parameters, types, options) { // esl
 
   return string
 }
+
+export function resolveParamSerializationContext(options,query) {
+
+  const qO = query?.options
+  const sc = options.serializationContext
+
+  return {
+    nullString: 'null',
+    ...sc,
+    inlineParamValues: (sc?.inlineParamValues || qO?.inlineParamValues) ?? false,
+    inlineValueFormatter: (qO?.inlineValueFormatter || sc?.inlineValueFormatter) ?? options.inlineValueFormatter}
+}
+
 
 function stringifyValue(string, value, parameters, types, o) {
   return (
@@ -160,6 +201,9 @@ const builders = Object.entries({
   select,
   as: select,
   returning: select,
+  copy(first, rest, parameters, types, options) {
+    return '(' + select(first,rest,parameters,types,options) + ')'
+  },
 
   update(first, rest, parameters, types, options) {
     return (rest.length ? rest.flat() : Object.keys(first)).map(x =>
@@ -213,6 +257,38 @@ export const escapeIdentifier = function escape(str) {
   return '"' + str.replace(/"/g, '""').replace(/\./g, '"."') + '"'
 }
 
+export function dollarQuoteStringLiteral(str) {
+  const tag = 'a' + crypto.randomUUID().replaceAll('-','')
+  return `$${tag}$${str}$${tag}$`
+}
+
+// Ported from escapeLiteral in node-pg -which is in turn ported directly from libpq (9.2.4).
+// See https://github.com/brianc/node-postgres/blob/3e53d06cd891797469ebdd2f8a669183ba6224f6/packages/pg/lib/client.js#L451-L475
+export function escapeStringLiteral(str) {
+  let hasBackslash = false
+  let escaped = "'"
+
+  for (let i = 0; i < str.length; i++) {
+    let c = str[i]
+    if (c === "'") {
+      escaped += c + c
+    } else if (c === '\\') {
+      escaped += c + c
+      hasBackslash = true
+    } else {
+      escaped += c
+    }
+  }
+
+  escaped += "'"
+
+  if (hasBackslash === true) {
+    escaped = ' E' + escaped
+  }
+
+  return escaped
+}
+
 export const inferType = function inferType(x) {
   return (
     x instanceof Parameter ? x.type :
@@ -234,7 +310,7 @@ function arrayEscape(x) {
     .replace(escapeQuote, '\\"')
 }
 
-export const arraySerializer = function arraySerializer(xs, serializer, options) {
+export const arraySerializer = function arraySerializer(xs, serializer, typdelim, options, context) {
   if (Array.isArray(xs) === false)
     return xs
 
@@ -244,7 +320,7 @@ export const arraySerializer = function arraySerializer(xs, serializer, options)
   const first = xs[0]
 
   if (Array.isArray(first) && !first.type)
-    return '{' + xs.map(x => arraySerializer(x, serializer)).join(',') + '}'
+    return '{' + xs.map(x => arraySerializer(x, serializer, typdelim, options,context)).join(typdelim) + '}'
 
   return '{' + xs.map(x => {
     if (x === undefined) {
@@ -255,8 +331,8 @@ export const arraySerializer = function arraySerializer(xs, serializer, options)
 
     return x === null
       ? 'null'
-      : '"' + arrayEscape(serializer ? serializer(x.type ? x.value : x) : '' + x) + '"'
-  }).join(',') + '}'
+      : '"' + arrayEscape(serializer ? serializer(x.type ? x.value : x) : '' + x, context) + '"'
+  }).join(typdelim) + '}'
 }
 
 const arrayParserState = {

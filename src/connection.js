@@ -3,7 +3,7 @@ import tls from 'tls'
 import crypto from 'crypto'
 import Stream from 'stream'
 
-import { stringify, handleValue, arrayParser, arraySerializer } from './types.js'
+import { stringify, handleValue, arrayParser, arraySerializer, resolveParamSerializationContext } from './types.js'
 import { Errors } from './errors.js'
 import Result from './result.js'
 import Queue from './queue.js'
@@ -180,7 +180,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       throw Errors.generic('MAX_PARAMETERS_EXCEEDED', 'Max number of parameters (65534) exceeded')
 
     return q.options.simple
-      ? b().Q().str(q.strings[0] + b.N).end()
+      ? b().Q().str(q.string + b.N).end()
       : q.describeFirst
         ? Buffer.concat([describe(q), Flush])
         : q.prepare
@@ -217,10 +217,10 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
   function build(q) {
     const parameters = []
         , types = []
+    const opt = {...options, serializationContext: resolveParamSerializationContext(options,q) }
+    const string = stringify(q, q.strings[0], q.args[0], parameters, types, opt)
 
-    const string = stringify(q, q.strings[0], q.args[0], parameters, types, options)
-
-    !q.tagged && q.args.forEach(x => handleValue(x, parameters, types, options))
+    !q.tagged && q.args.forEach(x => handleValue(x, parameters, types, opt))
 
     q.prepare = options.prepare && ('prepare' in q.options ? q.options.prepare : true)
     q.string = string
@@ -720,22 +720,22 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
   async function fetchArrayTypes() {
     needsTypes = false
     const types = await new Query([`
-      select b.oid, b.typarray
+      select b.oid, b.typarray, a.typdelim
       from pg_catalog.pg_type a
       left join pg_catalog.pg_type b on b.oid = a.typelem
       where a.typcategory = 'A'
-      group by b.oid, b.typarray
+      group by b.oid, b.typarray, a.typdelim
       order by b.oid
     `], [], execute)
-    types.forEach(({ oid, typarray }) => addArrayType(oid, typarray))
+    types.forEach(({ oid, typarray,typdelim }) => addArrayType(oid, typarray, typdelim))
   }
 
-  function addArrayType(oid, typarray) {
+  function addArrayType(oid, typarray, typdelim) {
     const parser = options.parsers[oid]
     options.shared.typeArrayMap[oid] = typarray
     options.parsers[typarray] = (xs) => arrayParser(xs, parser)
     options.parsers[typarray].array = true
-    options.serializers[typarray] = (xs) => arraySerializer(xs, options.serializers[oid], options)
+    options.serializers[typarray] = (xs,c) => arraySerializer(xs, options.serializers[oid], typdelim, options,c)
   }
 
   function tryNext(x, xs) {
@@ -908,7 +908,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
 
       type = types[i]
       parameters[i] = x = type in options.serializers
-        ? options.serializers[type](x)
+        ? options.serializers[type](x, { inlineValue: false })
         : '' + x
 
       prev = b.i
