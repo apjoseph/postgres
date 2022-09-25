@@ -217,7 +217,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
   function build(q) {
     const parameters = []
         , types = []
-    const opt = {...options, serializationContext: resolveParamSerializationContext(options,q) }
+    const opt = { ...options, serializationContext: resolveParamSerializationContext(options, q) }
     const string = stringify(q, q.strings[0], q.args[0], parameters, types, opt)
 
     !q.tagged && q.args.forEach(x => handleValue(x, parameters, types, opt))
@@ -727,15 +727,16 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       group by b.oid, b.typarray, a.typdelim
       order by b.oid
     `], [], execute)
-    types.forEach(({ oid, typarray,typdelim }) => addArrayType(oid, typarray, typdelim))
+    types.forEach(({ oid, typarray, typdelim }) => addArrayType(oid, typarray, typdelim))
   }
 
   function addArrayType(oid, typarray, typdelim) {
     const parser = options.parsers[oid]
     options.shared.typeArrayMap[oid] = typarray
-    options.parsers[typarray] = (xs) => arrayParser(xs, parser)
+    options.parsers[typarray] = (xs) => arrayParser(xs, parser, typdelim)
     options.parsers[typarray].array = true
-    options.serializers[typarray] = (xs,c) => arraySerializer(xs, options.serializers[oid], typdelim, options,c)
+    options.serializers[typarray] = (xs, c) => arraySerializer(xs, options.serializers[oid], typdelim, options,
+      { typdelim, oid, typarray, ...c })
   }
 
   function tryNext(x, xs) {
@@ -908,8 +909,11 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
 
       type = types[i]
       parameters[i] = x = type in options.serializers
-        ? options.serializers[type](x, { inlineValue: false })
+        ? options.serializers[type](x, { oid: type, inlineValue: false, options })
         : '' + x
+
+      if (x === null)
+        return b.i32(0xFFFFFFFF)
 
       prev = b.i
       b.inc(4).str(x).i32(b.i - prev - 4, prev)

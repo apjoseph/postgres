@@ -1,6 +1,6 @@
 import { Query } from './query.js'
 import { Errors } from './errors.js'
-import crypto from "crypto"
+import crypto from 'crypto'
 export const types = {
   string: {
     to: 25,
@@ -22,7 +22,7 @@ export const types = {
   boolean: {
     to: 16,
     from: 16,
-    serialize: (x,o) => o.inlineValue ?  '' + x :  x === true ? 't' : 'f',
+    serialize: (x, o) => o.inlineValue ? '' + x : x === true ? 't' : 'f',
     parse: x => x === 't'
   },
   date: {
@@ -73,7 +73,7 @@ export class Builder extends NotTagged {
   }
 }
 
-function resolveParamInfo(x,options) {
+function resolveParamInfo(x, options) {
   let value = x instanceof Parameter ? x.value : x
   if (value === undefined) {
     x instanceof Parameter
@@ -90,33 +90,33 @@ function resolveParamInfo(x,options) {
       : x.type
     : inferType(x)
 
-  return {value,oid}
+  return { value, oid }
 }
 
-export function serializeAsStringLiteral(x,options,nullString,formatter) {
-  const {value,oid} = resolveParamInfo(x,options)
-  if(value === null) return nullString
-  const serialize = options.serializers[oid]
-  if (!serialize) {
-    throw Errors.generic('MISSING_STRING_LITERAL_SERIALIZER', 'No string literal serializer found for oid ' + oid )
-  }
-  const sv = serialize(value,{inlineValue: true})
-
-  return (sv !== null)
+export function serializeAsStringLiteral(x, options, nullString, formatter) {
+  const { value, oid } = resolveParamInfo(x, options)
+  if (value === null) return nullString
+  const serializer = options.serializers[oid]
+  const context = { oid, inlineValue: true, options }
+  const serializedValue = serializer ? serializer(value, context) : value
+  return (serializedValue !== null)
     ? (formatter)
-      ? formatter(sv)
-      : sv
+      ? formatter(serializedValue)
+      : serializedValue
     : nullString
-
 }
 
 export function handleValue(x, parameters, types, options) {
 
-  const {nullString,inlineParamValues,inlineValueFormatter} = resolveParamSerializationContext(options)
+  const {
+    nullString,
+    inlineParamValues,
+    inlineValueFormatter
+  } = resolveParamSerializationContext(options)
 
-  if (inlineParamValues) return serializeAsStringLiteral(x,options,nullString,inlineValueFormatter)
+  if (inlineParamValues) return serializeAsStringLiteral(x, options, nullString, inlineValueFormatter)
 
-  const {value,oid} = resolveParamInfo(x,options)
+  const { value, oid } = resolveParamInfo(x, options)
   parameters.push(value)
   return '$' + (types.push(oid))
 }
@@ -124,7 +124,7 @@ export function handleValue(x, parameters, types, options) {
 const defaultHandlers = typeHandlers(types)
 
 export function stringify(q, string, value, parameters, types, options) { // eslint-disable-line
-  options = {...options, serializationContext: resolveParamSerializationContext(options,q) }
+  options = { ...options, serializationContext: resolveParamSerializationContext(options, q) }
   for (let i = 1; i < q.strings.length; i++) {
     string += (stringifyValue(string, value, parameters, types, options)) + q.strings[i]
     value = q.args[i]
@@ -133,7 +133,7 @@ export function stringify(q, string, value, parameters, types, options) { // esl
   return string
 }
 
-export function resolveParamSerializationContext(options,query) {
+export function resolveParamSerializationContext(options, query) {
 
   const qO = query?.options
   const sc = options.serializationContext
@@ -141,8 +141,10 @@ export function resolveParamSerializationContext(options,query) {
   return {
     nullString: 'null',
     ...sc,
-    inlineParamValues: (sc?.inlineParamValues || qO?.inlineParamValues) ?? false,
-    inlineValueFormatter: (qO?.inlineValueFormatter || sc?.inlineValueFormatter) ?? options.inlineValueFormatter}
+    inlineParamValues: qO?.inlineParamValues === false
+      ? false
+      : (sc?.inlineParamValues || qO?.inlineParamValues) ?? false,
+    inlineValueFormatter: (qO?.inlineValueFormatter || sc?.inlineValueFormatter) ?? options.inlineValueFormatter }
 }
 
 
@@ -202,7 +204,7 @@ const builders = Object.entries({
   as: select,
   returning: select,
   copy(first, rest, parameters, types, options) {
-    return '(' + select(first,rest,parameters,types,options) + ')'
+    return '(' + select(first, rest, parameters, types, options) + ')'
   },
 
   update(first, rest, parameters, types, options) {
@@ -258,19 +260,18 @@ export const escapeIdentifier = function escape(str) {
 }
 
 export function dollarQuoteStringLiteral(str) {
-  const tag = 'a' + crypto.randomUUID().replaceAll('-','')
+  const tag = 'a' + crypto.randomUUID().replaceAll('-', '')
   return `$${tag}$${str}$${tag}$`
 }
 
-// Ported from escapeLiteral in node-pg -which is in turn ported directly from libpq (9.2.4).
-// See https://github.com/brianc/node-postgres/blob/3e53d06cd891797469ebdd2f8a669183ba6224f6/packages/pg/lib/client.js#L451-L475
+// Ported from escapeLiteral in node-pg which is in turn ported directly from libpq (9.2.4).
 export function escapeStringLiteral(str) {
   let hasBackslash = false
-  let escaped = "'"
+  let escaped = '\''
 
   for (let i = 0; i < str.length; i++) {
-    let c = str[i]
-    if (c === "'") {
+    const c = str[i]
+    if (c === '\'') {
       escaped += c + c
     } else if (c === '\\') {
       escaped += c + c
@@ -280,11 +281,11 @@ export function escapeStringLiteral(str) {
     }
   }
 
-  escaped += "'"
+  escaped += '\''
 
-  if (hasBackslash === true) {
+  if (hasBackslash === true)
     escaped = ' E' + escaped
-  }
+
 
   return escaped
 }
@@ -320,7 +321,7 @@ export const arraySerializer = function arraySerializer(xs, serializer, typdelim
   const first = xs[0]
 
   if (Array.isArray(first) && !first.type)
-    return '{' + xs.map(x => arraySerializer(x, serializer, typdelim, options,context)).join(typdelim) + '}'
+    return '{' + xs.map(x => arraySerializer(x, serializer, typdelim, options, context)).join(typdelim) + '}'
 
   return '{' + xs.map(x => {
     if (x === undefined) {
@@ -331,7 +332,7 @@ export const arraySerializer = function arraySerializer(xs, serializer, typdelim
 
     return x === null
       ? 'null'
-      : '"' + arrayEscape(serializer ? serializer(x.type ? x.value : x) : '' + x, context) + '"'
+      : '"' + arrayEscape(serializer ? serializer(x.type ? x.value : x, context) : '' + x) + '"'
   }).join(typdelim) + '}'
 }
 
@@ -343,13 +344,14 @@ const arrayParserState = {
   last: 0
 }
 
-export const arrayParser = function arrayParser(x, parser) {
+export const arrayParser = function arrayParser(x, parser, typdelim) {
   arrayParserState.i = arrayParserState.last = 0
-  return arrayParserLoop(arrayParserState, x, parser)
+  return arrayParserLoop(arrayParserState, x, parser, typdelim)
 }
 
-function arrayParserLoop(s, x, parser) {
+function arrayParserLoop(s, x, parser, typdelim) {
   const xs = []
+  const nullAwareParser = (v) => (v.toLowerCase() === 'null') ? null : parser ? parser(v) : v
   for (; s.i < x.length; s.i++) {
     s.char = x[s.i]
     if (s.quoted) {
@@ -367,19 +369,19 @@ function arrayParserLoop(s, x, parser) {
       s.quoted = true
     } else if (s.char === '{') {
       s.last = ++s.i
-      xs.push(arrayParserLoop(s, x, parser))
+      xs.push(arrayParserLoop(s, x, parser, typdelim))
     } else if (s.char === '}') {
+      s.last < s.i && xs.push(nullAwareParser(x.slice(s.last, s.i)))
       s.quoted = false
-      s.last < s.i && xs.push(parser ? parser(x.slice(s.last, s.i)) : x.slice(s.last, s.i))
       s.last = s.i + 1
       break
-    } else if (s.char === ',' && s.p !== '}' && s.p !== '"') {
-      xs.push(parser ? parser(x.slice(s.last, s.i)) : x.slice(s.last, s.i))
+    } else if (s.char === typdelim && s.p !== '}' && s.p !== '"') {
+      xs.push(nullAwareParser(x.slice(s.last, s.i)))
       s.last = s.i + 1
     }
     s.p = s.char
   }
-  s.last < s.i && xs.push(parser ? parser(x.slice(s.last, s.i + 1)) : x.slice(s.last, s.i + 1))
+  s.last < s.i && xs.push(nullAwareParser(x.slice(s.last, s.i + 1)))
   return xs
 }
 

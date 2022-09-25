@@ -103,7 +103,8 @@ function Postgres(a, b) {
       array,
       json,
       file,
-      valueToStringLiteral : (x,nullString='',formatter) => serializeAsStringLiteral(x,options,nullString,formatter)
+      valueToStringLiteral : (x, nullString = '', formatter) =>
+        serializeAsStringLiteral(x, options, nullString, formatter)
     })
 
     return sql
