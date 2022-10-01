@@ -57,6 +57,12 @@ export class Parameter extends NotTagged {
   }
 }
 
+export class PgType extends NotTagged {
+  constructor() {
+    super()
+  }
+}
+
 export class Builder extends NotTagged {
   constructor(first, rest) {
     super()

@@ -120,6 +120,14 @@ t('Empty array', async() =>
   [true, Array.isArray((await sql`select ${ sql.array([], 1009) } as x`)[0].x)]
 )
 
+t('Null array',async() =>
+  [3,(await sql`select ${sql.array([null,null,null],1009)} x`)[0].x.filter(x => x === null).length]
+)
+
+t('Inline null array',async() =>
+  [3,(await sql`select ${sql.array([null,null,null],1009)}::text[] x`.inline())[0].x.filter(x => x === null).length]
+)
+
 t('String array', async() =>
   ['123', (await sql`select ${ '{1,2,3}' }::int[] as x`)[0].x.join('')]
 )
@@ -145,8 +153,16 @@ t('Nested array n3', async() =>
   ['6', (await sql`select ${ sql.array([[[1, 2]], [[3, 4]], [[5, 6]]]) } as x`)[0].x[2][0][1]]
 )
 
+t('Nested array n3 - inline', async() =>
+  ['6', (await sql`select ${ sql.array([[[1, 2]], [[3, 4]], [[5, 6]]]) }::text[] as x`.inline())[0].x[2][0][1]]
+)
+
 t('Escape in arrays', async() =>
   ['Hello "you",c:\\windows', (await sql`select ${ sql.array(['Hello "you"', 'c:\\windows']) } as x`)[0].x.join(',')]
+)
+
+t('Escape in arrays - inline', async() =>
+  ['Hello "you",c:\\windows', (await sql`select ${ sql.array(['Hello "you"', 'c:\\windows']) }::text[] as x`.inline())[0].x.join(',')]
 )
 
 t('Escapes', async() => {
@@ -480,6 +496,25 @@ t('Point type array', async() => {
   await sql`insert into test (x) values (${ sql.array([sql.types.point([10, 20]), sql.types.point([20, 30])]) })`
   return [30, (await sql`select x from test`)[0].x[1][1], await sql`drop table test`]
 })
+
+t('Box type array', async() => {
+  const sql = postgres({
+    ...options,
+    types: {
+      box: {
+        to: 603,
+        from: [603],
+        serialize: ([a,b]) => '(' + (a[0] > b[0] ? [a,b] : [b,a]).map(([x,y]) => '(' + x + "," + y +')' ).join(',') + ')',
+        parse: (x) => x.slice(1,-1).split('),(').map(x => x.split(',').map(x => +x))
+      }
+    }
+  })
+
+  await sql`create table test (x box[])`
+  await sql`insert into test (x) values (${ sql.array([sql.types.box([[10, 20], [30, 40]]), sql.types.box([[40, 50], [60, 70]])]) })`
+  return [50, (await sql`select x from test`)[0].x[1][1][1], await sql`drop table test`]
+})
+
 
 t('sql file', async() =>
   [1, (await sql.file(rel('select.sql')))[0].x]
@@ -1793,6 +1828,23 @@ t('Array returns rows as arrays of columns', async() => {
   return [(await sql`select 1`.values())[0][0], 1]
 })
 
+t('Copy read from subquery with inline param', async() => {
+  const result = []
+
+  await sql`create table test (x int)`
+  await sql`insert into test select * from generate_series(1,10)`
+  const frag = sql`select * from test where x > ${5}`
+  const readable = await sql`copy (${frag})  to stdout`.readable()
+  readable.on('data', x => result.push(x))
+  await new Promise(r => readable.on('end', r))
+
+  return [
+    result.length,
+    5,
+    await sql`drop table test`
+  ]
+})
+
 t('Copy read', async() => {
   const result = []
 
@@ -1809,6 +1861,7 @@ t('Copy read', async() => {
   ]
 })
 
+
 t('Copy write', { timeout: 2 }, async() => {
   await sql`create table test (x int)`
   const writable = await sql`copy test from stdin`.writable()
@@ -1822,6 +1875,60 @@ t('Copy write', { timeout: 2 }, async() => {
   return [
     (await sql`select 1 from test`).length,
     2,
+    await sql`drop table test`
+  ]
+})
+
+t('Copy write dynamic columns', { timeout: 2 }, async() => {
+  await sql`create table test (x int, y int)`
+  const columns = ['x','y']
+  const writable = await sql`copy test ${sql(columns)} from stdin`.writable()
+
+  writable.write('1\t2\n')
+  writable.write('1\t2\n')
+  writable.end()
+
+  await new Promise(r => writable.on('finish', r))
+
+  return [
+    (await sql`select sum(x+y)::integer z from test`)[0].z,
+    6,
+    await sql`drop table test`
+  ]
+})
+
+t('Copy write dynamic header and columns', { timeout: 2 }, async() => {
+  await sql`create table test (x int, y int)`
+  const columns = ['x','y']
+  const tbl = "test"
+  const writable = await sql`copy ${sql(tbl)} ${sql(columns)} from stdin`.writable()
+
+  writable.write('1\t2\n')
+  writable.write('1\t2\n')
+  writable.end()
+
+  await new Promise(r => writable.on('finish', r))
+
+  return [
+    (await sql`select sum(x+y)::integer z from test`)[0].z,
+    6,
+    await sql`drop table test`
+  ]
+})
+
+t('Copy write inline options', { timeout: 2 }, async() => {
+  await sql`create table test (x int, y int)`
+  const writable = await sql`copy test from stdin WITH (FORMAT CSV, HEADER ${true}, delimiter ${'|'} )`.writable()
+  writable.write('x|y\n')
+  writable.write('1|2\n')
+  writable.write('1|2\n')
+  writable.end()
+
+  await new Promise(r => writable.on('finish', r))
+
+  return [
+    (await sql`select sum(x+y)::integer z from test`)[0].z,
+    6,
     await sql`drop table test`
   ]
 })

@@ -29,7 +29,7 @@ services:
         read_only: true
       - type: bind
         source: .compose/dev/pg/docker-entrypoint-initdb.d
-        target: /docker-entrypoint-initdb.d
+        target: /initdb
         read_only: true
       - type: bind
         source: .compose/dev/pg/wrap-entrypoint.sh
@@ -49,13 +49,32 @@ services:
     profiles:
       - dev
     image: alpine/socat
-    command: ["TCP-LISTEN:5433,fork,reuseaddr", "TCP:127.0.0.1:5432"]
+    command: ["-d","-d","TCP4-LISTEN:5433,fork,reuseaddr,forever", "TCP:127.0.0.1:5432"]
     network_mode: service:pg
     healthcheck:
       test: ["CMD-SHELL","socat /dev/null TCP:127.0.0.1:5433"]
       interval: 1s
       timeout: 1s
       retries: 20
+    depends_on:
+      pg:
+        condition: service_healthy
+
+  socout:
+    profiles:
+      - publish
+    image: alpine/socat
+    command: ["-d","-d","TCP4-LISTEN:5436,reuseaddr,fork,forever","UNIX-CLIENT:/var/run/postgresql/.s.PGSQL.5432"]
+    healthcheck:
+      test: [ "CMD-SHELL","socat /dev/null TCP:localhost:5436" ]
+      interval: 1s
+      timeout: 1s
+      retries: 20
+    volumes:
+      - type: volume
+        source: pg-socket
+        target: /var/run/postgresql
+    ports: ["${HOST_POSTGRES_PORT}:5436"]
     depends_on:
       pg:
         condition: service_healthy
@@ -95,6 +114,8 @@ services:
     command: [ "npm","run", "test" ]
     depends_on:
       socat:
+        condition: service_healthy
+      socout:
         condition: service_healthy
       pg:
         condition: service_healthy

@@ -618,6 +618,8 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       const table = x.readUInt32BE(index)
       const number = x.readUInt16BE(index + 4)
       const type = x.readUInt32BE(index + 6)
+      const fieldLength = x.readUInt16BE(index + 10)
+      const typeModifier = x.readUInt32BE(index + 12)
       query.statement.columns[i] = {
         name: transform.column.from
           ? transform.column.from(x.toString('utf8', start, index - 1))
@@ -625,7 +627,9 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
         parser: parsers[type],
         table,
         number,
-        type
+        type,
+        fieldLength,
+        typeModifier
       }
       index += 18
     }
@@ -720,15 +724,57 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
   async function fetchArrayTypes() {
     needsTypes = false
     const types = await new Query([`
-      select b.oid, b.typarray, a.typdelim
-      from pg_catalog.pg_type a
-      left join pg_catalog.pg_type b on b.oid = a.typelem
-      where a.typcategory = 'A'
-      group by b.oid, b.typarray, a.typdelim
-      order by b.oid
+        WITH typaliases as (
+            SELECT
+                typalias,
+                reftyp
+            FROM
+                (VALUES
+                     ('int8',20), ('serial8',20), ('bigserial',20),
+                     ('varbit',1562), ('bool',16), ('char',1042),
+                     ('varchar',1043), ('float8',701), ('int',23),
+                     ('int4',23), ('decimal',1700), ('float4',700),
+                     ('int2',21), ('smallserial',21), ('serial',23),
+                     ('timetz',1266), ('timestamptz',1184)
+                ) v(typalias,reftyp)
+        )
+        SELECT
+            t.oid,
+            t.oid::regtype::varchar name,
+            coalesce(a.typaliases,array[]::varchar[]) aliases,
+            t.typcategory,
+            t.typtype,
+            t.typelem,
+            t.typarray,
+            t.typdelim,
+            t.typbasetype,
+            t.typnamespace::regnamespace::varchar schema
+
+        FROM
+            pg_type t
+                LEFT JOIN LATERAL (
+                SELECT
+                    array_agg(case
+                                  when t.typcategory = 'A'
+                                      then a.typalias || '[]'
+                                  else a.typalias
+                        end) typaliases
+                FROM
+                    typaliases a
+                WHERE
+                    t.oid = a.reftyp or (t.typelem = a.reftyp and t.typcategory = 'A')
+                GROUP BY
+                    t.oid
+                ) a ON TRUE
+
     `], [], execute)
-    types.forEach(({ oid, typarray, typdelim }) => addArrayType(oid, typarray, typdelim))
+    types.forEach(({ oid, typelem, typcategory, typdelim }) => {
+      if (typcategory === 'A') {
+        addArrayType(typelem, oid, typdelim)
+      }
+    })
   }
+
 
   function addArrayType(oid, typarray, typdelim) {
     const parser = options.parsers[oid]
