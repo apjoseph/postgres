@@ -18,8 +18,13 @@ import {
   fromKebab,
   escapeStringLiteral,
   dollarQuoteStringLiteral,
-  serializeAsStringLiteral
+  serializeAsStringLiteral,
+  compileMetaSelectors
 } from './types.js'
+
+import {
+  metadataSelectors
+} from './dbmeta.js'
 
 import Connection from './connection.js'
 import { Query, CLOSE } from './query.js'
@@ -46,7 +51,8 @@ Object.assign(Postgres, {
     from: [20],
     parse: x => BigInt(x), // eslint-disable-line
     serialize: x => x.toString()
-  }
+  },
+  metadataSelectors
 })
 
 export default Postgres
@@ -418,7 +424,7 @@ function parseOptions(a, b) {
     inlineValueFormatter: escapeStringLiteral
   }
 
-  return {
+  const options = {
     host            : Array.isArray(host) ? host : host.split(',').map(x => x.split(':')[0]),
     port            : Array.isArray(port) ? port : host.split(',').map(x => parseInt(x.split(':')[1] || port)),
     path            : o.path || host.indexOf('/') > -1 && host + '/.s.PGSQL.' + port,
@@ -449,6 +455,14 @@ function parseOptions(a, b) {
     parameters      : {},
     shared          : { retries: 0, typeArrayMap: {} },
     ...mergeUserTypes(o.types)
+  }
+
+  return {
+    ...options,
+    shared: {
+      ...options.shared,
+      metadata: compileMetaSelectors(metadataSelectors,options)
+    }
   }
 }
 
