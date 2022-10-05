@@ -1,7 +1,7 @@
 import { Query } from './query.js'
 import { Errors } from './errors.js'
 import crypto from 'crypto'
-import { metadataSelectors } from './dbmeta.js'
+
 export const types = {
   string: {
     to: 25,
@@ -257,72 +257,6 @@ function firstIsString(x) {
   if (Array.isArray(x))
     return firstIsString(x[0])
   return typeof x === 'string' ? 1009 : 0
-}
-
-export const compileMetaSelectors = function(metadataSelectors,options) {
-
-  const configurations = {}
-  const allTables = {}
-  const allFragments = []
-
-  Object.entries(metadataSelectors).forEach(([,selector])=> {
-    const {
-      plugin,
-      configure,
-      description,
-      fragments,
-    } = selector(options)
-
-    configurations[plugin] = configure
-
-    Object.entries(fragments).forEach(([fName,{keyField,fragment,description,dependsOn,tables}]) => {
-      const tbls = tables.map(({namespace,name}) => {
-        const fqn = escapeIdentifier(namespace) + '.' + escapeIdentifier(name)
-        const tbl = {
-          fqn,
-          namespace,
-          name
-        }
-        allTables[fqn] = tbl
-        return tbl
-      })
-
-      allFragments.push({
-        plugin,
-        name: fName,
-        ref: plugin + '/' + fName,
-        keyField,
-        fragment,
-        dependsOn,
-        description,
-        tables: tbls
-      })
-    })
-
-  })
-
-  allFragments.sort((a,b) => {
-    if (b.dependsOn.contains(a.ref)) {
-      return -1
-    }
-    if (a.dependsOn.contains(b.ref)) {
-      return 1
-    }
-    else return 0
-  })
-
-  const query = allFragments.map(f => f.name + 'as ( ' + f.fragment + ')').join(',')
-    + 'SELECT ' +  allFragments.map(f => f.name + '.' + f.keyField).join(',')
-
-  return {
-    configurations,
-    tables: allTables,
-    fragments: allFragments,
-    query,
-    needsFetch: true
-  }
-
-
 }
 
 export const mergeUserTypes = function(types) {

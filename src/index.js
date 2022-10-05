@@ -18,12 +18,12 @@ import {
   fromKebab,
   escapeStringLiteral,
   dollarQuoteStringLiteral,
-  serializeAsStringLiteral,
-  compileMetaSelectors
+  serializeAsStringLiteral
 } from './types.js'
 
 import {
-  metadataSelectors
+  compileMetaSelectors,
+  plugins
 } from './dbmeta.js'
 
 import Connection from './connection.js'
@@ -52,7 +52,7 @@ Object.assign(Postgres, {
     parse: x => BigInt(x), // eslint-disable-line
     serialize: x => x.toString()
   },
-  metadataSelectors
+  metadataSelectors: plugins
 })
 
 export default Postgres
@@ -461,7 +461,7 @@ function parseOptions(a, b) {
     ...options,
     shared: {
       ...options.shared,
-      metadata: compileMetaSelectors(metadataSelectors,options)
+      metadata: compileMetaSelectors(plugins,options)
     }
   }
 }

@@ -78,7 +78,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
     , cancelMessage
     , result = new Result()
     , incoming = Buffer.alloc(0)
-    , needsTypes = options.fetch_types
+    // , needsTypes = options.fetch_types
     , backendParameters = {}
     , statements = {}
     , statementId = Math.random().toString(36).slice(2)
@@ -349,7 +349,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
   function connected() {
     try {
       statements = {}
-      needsTypes = options.fetch_types
+      // options.shared.metadata.needsTypes = options.fetch_types
       statementId = Math.random().toString(36).slice(2)
       statementCount = 1
       lifeTimer.start()
@@ -525,7 +525,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
           return terminate()
       }
 
-      if (needsTypes)
+      if (options.shared.metadata.needsTypes)
         return fetchArrayTypes()
 
       execute(initial)
@@ -722,55 +722,26 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
   }
 
   async function fetchArrayTypes() {
-    needsTypes = false
-    const types = await new Query([`
-        WITH typaliases as (
-            SELECT
-                typalias,
-                reftyp
-            FROM
-                (VALUES
-                     ('int8',20), ('serial8',20), ('bigserial',20),
-                     ('varbit',1562), ('bool',16), ('char',1042),
-                     ('varchar',1043), ('float8',701), ('int',23),
-                     ('int4',23), ('decimal',1700), ('float4',700),
-                     ('int2',21), ('smallserial',21), ('serial',23),
-                     ('timetz',1266), ('timestamptz',1184)
-                ) v(typalias,reftyp)
-        )
-        SELECT
-            t.oid,
-            t.oid::regtype::varchar name,
-            coalesce(a.typaliases,array[]::varchar[]) aliases,
-            t.typcategory,
-            t.typtype,
-            t.typelem,
-            t.typarray,
-            t.typdelim,
-            t.typbasetype,
-            t.typnamespace::regnamespace::varchar schema
 
-        FROM
-            pg_type t
-                LEFT JOIN LATERAL (
-                SELECT
-                    array_agg(case
-                                  when t.typcategory = 'A'
-                                      then a.typalias || '[]'
-                                  else a.typalias
-                        end) typaliases
-                FROM
-                    typaliases a
-                WHERE
-                    t.oid = a.reftyp or (t.typelem = a.reftyp and t.typcategory = 'A')
-                GROUP BY
-                    t.oid
-                ) a ON TRUE
+    const metadata = options.shared.metadata
+    metadata.needsTypes = false
+    const typeRes = await new Query([
+      options.shared.metadata.query
+    ],[],execute).raw()
 
-    `], [], execute)
-    types.forEach(({ oid, typelem, typcategory, typdelim }) => {
-      if (typcategory === 'A') {
-        addArrayType(typelem, oid, typdelim)
+    const row = typeRes[0]
+
+    const types = {}
+    const columns = typeRes.statement.columns
+    let frag
+    for (let i = 0; i < columns.length; i++) {
+      frag = metadata.fragments[i]
+      types[frag.name] = frag.configure(JSON.parse(row[i]))
+    }
+
+    Object.values(types.types).forEach(({ oid, elemTypeOid, cat, delim }) => {
+      if (cat === 'A') {
+        addArrayType(elemTypeOid, oid, delim)
       }
     })
   }
