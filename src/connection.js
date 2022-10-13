@@ -725,23 +725,52 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
 
     const metadata = options.shared.metadata
     metadata.needsTypes = false
-    const typeRes = await new Query([
+    const metaRes = await new Query([
       options.shared.metadata.query
     ],[],execute).raw()
 
-    const row = typeRes[0]
+    const metaRow = metaRes[0]
 
-    const types = {}
-    const columns = typeRes.statement.columns
-    let frag
+    const columns = metaRes.statement.columns
+    const output = {}
+
+    const pluginSelections = Object.values(metadata.pluginStates).flatMap(({selections,selectMetadata,name:pluginName}) => {
+      output[pluginName] = {
+        selections: {},
+        selectMetadata
+      }
+        return selections.map(({name,transformers}) => {
+          output[pluginName].selections[name] = []
+          return {
+            pluginName,
+            name,
+            transformers
+          }
+        })
+    })
+
+    let tbl
     for (let i = 0; i < columns.length; i++) {
-      frag = metadata.fragments[i]
-      types[frag.name] = frag.configure(JSON.parse(row[i]))
+      tbl = metadata.tables[i]
+
+      JSON.parse(metaRow[i]).forEach((row) => {
+        pluginSelections.forEach(({pluginName,transformers,name:selectionName}) => {
+          const selection = {}
+          transformers.forEach(({name,transform,rowIdx}) => {
+            selection[name] = transform ?  transform(row[rowIdx]) : row[rowIdx]
+          })
+          output[pluginName].selections[selectionName].push(selection)
+        })
+      })
     }
 
-    Object.values(types.types).forEach(({ oid, elemTypeOid, cat, delim }) => {
-      if (cat === 'A') {
-        addArrayType(elemTypeOid, oid, delim)
+    const pluginMetadata = Object.fromEntries(
+      Object.entries(output).map(([pluginName,{selections,selectMetadata}]) => [pluginName,selectMetadata(output,selections)])
+    )
+
+    Object.values(pluginMetadata.core.types).forEach(({ oid, elementTypeOid, category, delimiter }) => {
+      if (category === 'A') {
+        addArrayType(elementTypeOid, oid, delimiter)
       }
     })
   }

@@ -1,161 +1,203 @@
 import { Errors } from './errors.js'
-import { escapeIdentifier } from './types.js'
+import { escapeIdentifier, escapeStringLiteral } from './types.js'
 // see: https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
-const semVerRegex = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
+const semVerRegex = /^([xX*]|0|[1-9]\d*)\.([xX*]|0|[1-9]\d*)\.([xX*]|0|[1-9]\d*)(?:-((?:[*]|0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:[*]|0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
 const parseSemVer = (ver) => {
-
-  if (ver) {
-    semVerRegex.match()
-  }
 
   const match = semVerRegex.exec(ver)
 
   if (!match) {
-    //TODO Plugin error
-    Errors.generic('INVALID_SEMVER','Version "' + ver + '" is not a valid sematic version' )
+    throw Errors.generic('INVALID_SEMVER','Version "' + ver + '" is not a valid sematic version' )
   }
 
-  let [,major,minor,patch,preRelease,buildMetadata] = match
+  let [,,,,preRelease,buildMetadata] = match
+  let n
+  const [major,minor,patch] = match.slice(1,4).map(x => {
+    n = Number.parseInt(x,10)
+    return Number.isFinite(n) ? n : 'x'
+  })
 
-  major = Number.parseInt(major,10)
-  minor = Number.parseInt(minor,10)
-  patch = Number.parseInt(patch,10)
+  preRelease = preRelease
+    ? preRelease.split('.').map(x => {
+      n = Number.parseInt(x,10)
+      return Number.isFinite(n) ? n : x
+    })
+    : []
 
-  preRelease = preRelease ? preRelease.split('.').map(x => {
-    const n = Number.parseInt(x,10)
-    return Number.isFinite(n) ? n : x
-  }) : []
+  return {major,minor,patch,preRelease,buildMetadata}
+}
 
-  return new SemVer(major,minor,patch,preRelease,buildMetadata)
-
+const semverToString = (semver) =>  {
+  const {major,minor,patch,preRelease,buildMetadata} = semver
+  let out = major + '.' + minor + '.' + patch
+  if (preRelease.length > 0) out += "-" + preRelease.join('.');
+  if (buildMetadata !== null && buildMetadata !== undefined) out += '+' + buildMetadata;
+  return out
 }
 
 //const pgVerRegex = /^(0|[1-9]\d*)(?:([a-zA-Z]+)([1-9]+)|\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:-([a-zA-Z]+)([1-9]\d*))?)?)(?:\s+.*)?$/
-const postTenPgVerRegex = /^([1-9]\d*)(?:([a-zA-Z]+)([1-9]+)|\.(0|[1-9]\d*))(?:\s+.*)?$/
-const preTenPgVerRegex = /^([6-9])\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([a-zA-Z]+)([1-9]\d*))?(?:\s+.*)?$/
-const parseServerVersion = (ver) => {
-  let major,minor,patch,preReleaseType,preReleaseNum
+const postTenPgVerRegex = /^([xX*]|[1-9]\d*)(?:([a-zA-Z]+)([*]|[1-9]+)|\.([xX*]|0|[1-9]\d*))(?:\s+.*)?$/
+const preTenPgVerRegex = /^([xX*]|[6-9])\.([xX*]|0|[1-9]\d*)\.([xX*]|0|[1-9]\d*)(?:-([a-zA-Z]+)([*]|[1-9]\d*))?(?:\s+.*)?$/
+const pgVersionToSemver = (ver) => {
+  let preReleaseType,nums
   let match = postTenPgVerRegex.exec(ver)
   if (match) {
-    major = match[1]
+    nums = [match[1],match[4],null,match[3]]
     preReleaseType = match[2]
-    preReleaseNum = match[3]
-    minor = match[4]
   } else {
     match = preTenPgVerRegex.exec(ver)
     if (!match) return;
-    major = match[1]
-    minor = match[2]
-    patch = match[3]
     preReleaseType = match[4]
-    preReleaseNum = match[5]
+    nums = [match[1],match[2],match[3],match[5]]
   }
 
-  major = Number.parseInt(major,10)
-  minor = minor && Number.parseInt(minor,10) || 0
-  patch = patch && Number.parseInt(patch,10) || 0
-  preReleaseNum = (preReleaseNum !== undefined) ? Number.parseInt(preReleaseNum,10) : undefined
-
-  return {major,minor,patch,preReleaseType,preReleaseNum}
-
+  let n
+  const [major,minor,patch,preRelease] = nums.map((x,i) => {
+    if (!x) return 0;
+    n = Number.parseInt(x,10)
+    return Number.isFinite(n) ? n : (i < 3) ? 'x' : '*'
+  })
+  return {major,minor,patch,preRelease: preReleaseType ? [preReleaseType,preRelease] : []}
 }
 
-class SemVer {
+const semverToPgString = (semver) => {
+  const {major,minor,patch,preRelease} = semver
 
-  constructor(major,minor,patch,preRelease,buildMetadata) {
-    this.major = major
-    this.minor = minor
-    this.patch = patch
-    this.preRelease = preRelease
-    this.buildMetadata = buildMetadata
-  }
-  cmp(x) {
-    const c = [[this.major,x.major],[this.minor,x.minor],[this.patch,x.patch],[this.preRelease,x.preRelease]]
-    let a,b
-    for (let i = 0; i < c.length; i++) {
-      if(length > 3) {
-        a = c[i][0]
-        b = c[i][1]
-        if (a !== undefined && b !== undefined) {
-
-        }
-      }
+  if (major > 9) {
+    if (preRelease.length > 0) {
+      return major + preRelease.join('')
     }
-    return 0
+    return major + '.' + minor
+  }
+
+  return (preRelease.length > 0)
+    ? major + '.' + minor + '.' + patch + '-' + preRelease.join('')
+    : major + '.' + minor + '.' + patch
+
+}
+
+const semverProps = ['major','minor','patch','preRelease']
+const compareSemver = (sv,cmp) => {
+  let prop, a, b ,dab, apLen, bpLen, i, api, bpi
+  for (let propIdx = 0; propIdx < semverProps.length; propIdx++) {
+    prop = semverProps[propIdx]
+    a = sv[prop]
+    b = cmp[prop]
+
+    if (prop === 'preRelease') {
+      if (a === b) return 0;
+      apLen = a?.length ?? 0
+      bpLen = b?.length ?? 0
+
+      if (apLen === 0) {
+        if (bpLen > 0) {
+          return 1
+        }
+        else {
+          return 0;
+        }
+      } else if (bpLen === 0) {
+        return -1
+      }
+
+      for (i = 0; i < apLen ; i++) {
+        if (i === bpLen) return 1;
+        api = a[i]
+        bpi = b[i]
+        if (api === bpi || api === '*' || bpi === '*') continue;
+        if (typeof api === 'number') {
+          if (typeof bpi === 'number') {
+            dab = api - bpi
+            if (dab !== 0) return dab;
+          } else {
+            return -1
+          }
+        }
+        return api.localeCompare(bpi)
+      }
+      return apLen - bpLen
+    }
+
+
+    if (a === 'x' || b === 'x') continue;
+    dab = a - b
+    if (dab !== 0) return dab;
 
   }
+  return 0
+
 }
 
 
 
 
 
-class PluginRef {
-  constructor(name) {
-
-  }
-}
-
-class HookDependency {
-
-  constructor(config) {
-    this.cfg = config
-  }
-
-  config() {
-    return this.cfg
-  }
-
-  pluginExVer(version) {
-    this.pgnExVer = version
-    this.pgnMinVer = undefined
-    this. pgnMaxVer = undefined
-    return this
-  }
-
-  pluginMinVer(version) {
-    this.pgnExVer = undefined
-  }
-
-  pluginMaxVer(version) {
-    return this
-  }
-}
-
-class PluginConfig {
-
-}
-
-class HookConfig {
-  constructor(event,pluginName,options,plugins) {
-    this.plugins = plugins
-    this.event = event
-  }
-
-  onTable(table) {
-  }
-
-  onSerializer(typeRef,pluginRef) {
-    return this
-  }
-
-  onFeatureEnabled(featureName,pluginRef) {
-  }
-
-  onParser(typeRef,pluginRef) {
-    return this
-  }
-
-  onMetaSlice(sliceName,pluginRef) {
-    return this
-  }
-
-  withPlugin(pluginRef) {
-    return new WithPlugin(this,pluginRef)
-  }
-
-
-}
+// class PluginRef {
+//   constructor(name) {
+//
+//   }
+// }
+//
+// class HookDependency {
+//
+//   constructor(config) {
+//     this.cfg = config
+//   }
+//
+//   config() {
+//     return this.cfg
+//   }
+//
+//   pluginExVer(version) {
+//     this.pgnExVer = version
+//     this.pgnMinVer = undefined
+//     this. pgnMaxVer = undefined
+//     return this
+//   }
+//
+//   pluginMinVer(version) {
+//     this.pgnExVer = undefined
+//   }
+//
+//   pluginMaxVer(version) {
+//     return this
+//   }
+// }
+//
+// class PluginConfig {
+//
+// }
+//
+// class HookConfig {
+//   constructor(event,pluginName,options,plugins) {
+//     this.plugins = plugins
+//     this.event = event
+//   }
+//
+//   onTable(table) {
+//   }
+//
+//   onSerializer(typeRef,pluginRef) {
+//     return this
+//   }
+//
+//   onFeatureEnabled(featureName,pluginRef) {
+//   }
+//
+//   onParser(typeRef,pluginRef) {
+//     return this
+//   }
+//
+//   onMetaSlice(sliceName,pluginRef) {
+//     return this
+//   }
+//
+//   withPlugin(pluginRef) {
+//     return new WithPlugin(this,pluginRef)
+//   }
+//
+//
+// }
 
 const typesPgFragment = `
   SELECT
@@ -234,125 +276,380 @@ const typesPgFragment = `
 `
 
 
-const corePlugin = (options) => {
+// const corePlugin = (options) => {
+//
+//   return {
+//     plugin: 'core',
+//     version: '1.0.0',
+//     description: 'Core Driver Metadata',
+//     conflicts: {
+//       warn: {},
+//       error: {}
+//     },
+//     hooks: {
+//       beforeConnect: {},
+//       afterConnect: {},
+//       beforeQueryInit: {},
+//       afterQueryInit: {},
+//       beforeQueryBuild: {},
+//       afterQueryBuild: {},
+//       beforeQueryExecute: {},
+//       afterQueryExecute: {},
+//       beforeBegin: {},
+//       afterBegin: {},
+//       beforeCommit: {},
+//       afterCommit: {},
+//       beforeSavePoint: {},
+//       afterSavePoint: {},
+//       beforeDestroy: {},
+//       afterDestroy: {},
+//       beforeInlineParameter: {},
+//       afterInlineParameter: {},
+//       beforeBindParameter: {},
+//       afterBindParameter: {},
+//       beforeRegisterSerializer: {},
+//       afterRegisterSerializer: {},
+//     },
+//     buildHooks: {},
+//
+//     fragments: {
+//       types: {
+//         keyField: 'data',
+//         sql: typesPgFragment,
+//         configure: (config) => config,
+//         description: 'Postgres types from catalog.',
+//         dependsOn: [],
+//         tables: [
+//           { namespace: 'pg_catalog', name: 'pg_types' },
+//           { namespace: 'pg_catalog', name: 'pg_namespace' },
+//           { namespace: 'pg_catalog', name: 'pg_description' }
+//         ],
+//       }
+//     }
+//   }
+// }
 
+
+
+const wrapWithFragment = (name,sql) => {
+  return `${escapeIdentifier(name)} as (${sql})`
+}
+
+// function table(name,schema,fieldSelectors) {
+//   return {
+//     name,
+//     schema,
+//     fieldSelectors
+//   }
+// }
+
+const addField = (select,options) => {
+  const {required,pgVersion,transform} = {required:true, ...options}
   return {
-    plugin: 'core',
-    version: '1.0.0',
-    description: 'Core Driver Metadata',
-    conflicts: {
-      warn: {},
-      error: {}
-    },
-    hooks: {
-      beforeConnect:{},
-      afterConnect: {},
-      beforeQueryInit: {},
-      afterQueryInit: {},
-      beforeQueryBuild: {},
-      afterQueryBuild: {},
-      beforeQueryExecute: {},
-      afterQueryExecute: {},
-      beforeBegin: {},
-      afterBegin: {},
-      beforeCommit: {},
-      afterCommit: {},
-      beforeSavePoint: {},
-      afterSavePoint: {},
-      beforeDestroy: {},
-      afterDestroy: {},
-      beforeInlineParameter: {},
-      afterInlineParameter: {},
-      beforeBindParameter: {},
-      afterBindParameter: {},
-      beforeRegisterSerializer: {},
-      afterRegisterSerializer: {},
-    },
-    buildHooks: {
-    },
-
-    fragments: {
-      types: {
-        keyField: 'data',
-        sql: typesPgFragment,
-        configure: (config) => config,
-        description: 'Postgres types from catalog.',
-        dependsOn: [],
-        tables: [
-          {namespace: 'pg_catalog',name: 'pg_types'},
-          {namespace: 'pg_catalog',name: 'pg_namespace'},
-          {namespace: 'pg_catalog',name: 'pg_description'}
-        ],
-      }
-    }
+    required,
+    pgVersion,
+    select,
+    transform
   }
 }
 
-export const plugins = {
-  corePlugin
+export function makePlugin(name,version,configure) {
+  return configure({
+    name,
+    version,
+    table(name,namespace,fieldSelectors) {
+      return {
+        relation: {name, namespace},
+        fields: fieldSelectors({
+          addField
+        })
+      }
+    },
+    configure(selections,metadata) {
+      return {
+        name,
+        version,
+        selections,
+        metadata
+      }
+    }
+  })
 }
-export const compileMetaSelectors = function(metadataSelectors, options) {
 
-  const allTables = {}
-  const allFragments = []
+export const corePlugin = makePlugin('core','1.0.0',({table,configure}) => {
+  const types = table('pg_type','pg_catalog',(({addField}) => {
+    return {
+      oid: addField(`oid`),
+      name: addField(`typname`),
+      category: addField(`typcategory`),
+      arrayTypeOid: addField(`typarray`),
+      elementTypeOid: addField(`typelem`),
+      delimiter: addField(`typdelim`)
+    }
+  }))
 
-  Object.entries(metadataSelectors).forEach(([, selector]) => {
-    const {
-      plugin,
-      fragments
-    } = selector(options)
+  return configure({types},(config,{types}) => {
+    return {
+      types
+    }
+  })
+})
 
-    Object.entries(fragments).forEach(([fName, { keyField, sql, description, dependsOn, tables, configure }]) => {
-      const tbls = tables.map(({ namespace, name }) => {
-        const fqn = escapeIdentifier(namespace) + '.' + escapeIdentifier(name)
-        const tbl = {
-          fqn,
-          namespace,
-          name
+export const registerPlugins = function(plugins, options) {
+
+  const tblPrefix = 'porsager_postgres_'
+  const relationsByFqn = {}
+  const pluginStates = {}
+
+  plugins.forEach(({name:pluginName,version:pluginVersion,selections:relationSelections,metadata}) => {
+    const selections = Object.entries(relationSelections)
+      .map(([objName,{relation: {namespace: relNamespace, name: relName}, fields}]) => {
+        const fqn = escapeIdentifier(relNamespace) + '.' + escapeIdentifier(relName)
+
+        let relation = relationsByFqn[fqn]
+
+        if (!relation) {
+          relation = {
+            name: relName,
+            namespace: relNamespace,
+            alias: escapeIdentifier(tblPrefix + relName),
+            selections: [],
+          }
+          relationsByFqn[fqn] = relation
         }
-        allTables[fqn] = tbl
-        return tbl
-      })
+        const {alias, selections} = relation
+        let rowIdx = selections.length -1
+        const transformers = Object.entries(fields).map(([fieldName,{select,transform}]) => {
+          rowIdx++
+          selections.push(typeof select === 'string' ? alias + '.' + escapeIdentifier(select) : select(alias))
+          return {
+            transform,
+            name: fieldName,
+            rowIdx
+          }
+        })
 
-      allFragments.push({
-        plugin,
-        name: fName,
-        fqn: plugin + '/metadata-subquery/' + fName,
-        queryAlias: escapeIdentifier(plugin + '__' + fName + '__' + 'meta'),
-        keyField,
-        selectField: escapeIdentifier(fName),
-        sql,
-        dependsOn,
-        description,
-        configure,
-        tables: tbls
-      })
+        return {
+          name: objName,
+          transformers
+        }
+
     })
 
-  })
-
-  allFragments.sort((a, b) => {
-    if (b.dependsOn.contains(a.fqn)) {
-      return -1
+    pluginStates[pluginName] = {
+      name: pluginName,
+      version: pluginVersion,
+      selectMetadata: metadata,
+      selections
     }
-    if (a.dependsOn.contains(b.fqn)) {
-      return 1
-    } else {
-      return 0
-    }
+
   })
-
-  const query = 'WITH RECURSIVE '
-    + allFragments.map(f => f.queryAlias + ' as ( ' + f.sql + ')').join(',')
-    + ' SELECT ' + allFragments.map(f => '( SELECT ' + f.keyField + ' as ' + f.selectField + ' FROM ' + f.queryAlias + ')').join(',')
-
+  const cte =[]
+  const select = []
+  const tables = []
+  Object.entries(relationsByFqn).forEach(([fqn,{name,namespace,selections,transformations,alias}]) => {
+    cte.push(`${alias} as ( SELECT jsonb_agg(jsonb_build_array(${selections.join(',')})) data FROM ${fqn} as ${alias})`)
+    select.push(`(SELECT data FROM ${alias}) as ${alias}`)
+    tables.push({name,namespace,transformations,alias})
+  })
 
   return {
-    tables: allTables,
-    fragments: allFragments,
-    query,
+    tables,
+    pluginStates,
+    query: 'WITH ' + cte.join(',') + ' SELECT ' + select.join(','),
     needsTypes: true
   }
 
 
+  // Object.entries(fragments).forEach(([fName, { keyField, sql, description, dependsOn, tables, configure }]) => {
+  //   const tbls = tables.map(({ namespace, name }) => {
+  //     const fqn = escapeIdentifier(namespace) + '.' + escapeIdentifier(name)
+  //     const tbl = {
+  //       fqn,
+  //       namespace,
+  //       name
+  //     }
+  //     allTables[fqn] = tbl
+  //     return tbl
+  //   })
+  //
+  //   allFragments.push({
+  //     plugin,
+  //     name: fName,
+  //     fqn: plugin + '/metadata-subquery/' + fName,
+  //     queryAlias: escapeIdentifier(plugin + '__' + fName + '__' + 'meta'),
+  //     keyField,
+  //     selectField: escapeIdentifier(fName),
+  //     sql,
+  //     dependsOn,
+  //     description,
+  //     configure,
+  //     tables: tbls
+  //   })
+  // })
+  //
+  // allFragments.sort((a, b) => {
+  //   if (b.dependsOn.contains(a.fqn)) {
+  //     return -1
+  //   }
+  //   if (a.dependsOn.contains(b.fqn)) {
+  //     return 1
+  //   } else {
+  //     return 0
+  //   }
+  // })
+  //
+  // const query = 'WITH RECURSIVE '
+  //   + allFragments.map(f => f.queryAlias + ' as ( ' + f.sql + ')').join(',')
+  //   + ' SELECT ' + allFragments.map(f => '( SELECT ' + f.keyField + ' as ' + f.selectField + ' FROM ' + f.queryAlias + ')').join(',')
+  //
+  //
+  // return {
+  //   tables: allTables,
+  //   fragments: allFragments,
+  //   query,
+  //   needsTypes: true
+  // }
 }
+
+
+// class PgType {
+//
+//   constructor(oid,matchTypeRef,delimiter) {
+//     this.oid = oid
+//     this.matchTypeRef = matchTypeRef
+//   }
+//
+//   initialize() {
+//
+//   }
+// }
+
+// initialize()
+//
+// class PgArrayType extends PgType {
+//   constructor(oid,matchTypeRef,delimiter,size,elemOid,elemSerializer,elemParser) {
+//     super(oid,matchTypeRef)
+//     this.size = size
+//     this.elemOid = elemOid
+//     this.elemSerializer = elemSerializer
+//     this.elemParser = elemParser
+//     this.elements = []
+//     this.finalize()
+//   }
+//
+//   initialize() {
+//
+//   }
+// }
+//
+// class PgObjectType extends PgType {
+//
+// }
+//
+// class PgRangeType extends PgType {
+//
+// }
+
+//
+// class Parser {
+//
+//   onStartObject()
+// }
+//
+// class Serializer {
+//
+// }
+//
+// const exposeHooks = {
+//   onStartObject:{},
+//   onEndObject:{},
+//   onStartProperty:{},
+//   onEndProperty:{},
+//   onEnterObject:{},
+//   oExitObject:{},
+//   o
+//   onStartArray:{},
+//   onStartObject:{},
+//   onArray:{}
+// }
+
+
+// class PostgresPluginBuilder {
+//
+//   constructor(name,version) {
+//     this.name = name
+//     this.version = parseSemVer(version)
+//   }
+//
+//   configure(reducer,config) {
+//
+//     const {selector,types,hooks,exposeHooks,wrapHooks} = config
+//
+//     return {
+//       name,
+//       version,
+//       selector,
+//       hooks,
+//       exposeHooks
+//       types
+//     }
+//   }
+// }
+
+
+
+
+// TODO: add the below as tests
+// const pgSemvers = [
+//   ["10beta1",{major}]
+// ]
+//
+// const semvers = [
+//   [
+//     ['2.6.7','2.6.23'],
+//     ['2.0.0-RC1','2.0.0'],
+//     ['1.5.3-alpha.1','1.5.3-alpha.beta'],
+//     ['11.3.55-alpha.3','11.3.55-alpha.3.1'],
+//     ['2.5.3','2.5.4-beta'],
+//     ['2.x.x','3.0.0-alpha.1'],
+//     ['1.2.3-*','1.2.3'],
+//     ['7.6.5-alpha','7.6.5-alpha.*']
+//   ],
+//   [
+//     ['2.x.x','2.9.0'],
+//     ['1.*.5','1.3.5'],
+//     ['5.x.X-alpha','5.*.0-alpha']
+//   ]
+// ]
+// semvers.forEach((x,i) => {
+//   x.map(([a,b]) => (i < 2) ? [parseSemVer(a),parseSemVer(b)] : [pgVersionToSemver(a),pgVersionToSemver(b)])
+//     .forEach(([a,b]) => {
+//
+//       const res = compareSemver(a,b)
+//       const res2 = compareSemver(b,a)
+//
+//       if (Math.abs(res) !== res2) {
+//         console.log({r1:res,r2:res2})
+//       }
+//
+//       if (i%2 === 0) {
+//         if (res >= 0) {
+//           console.log({res,a,b})
+//           return
+//         }
+//         if (res2 <= 0) {
+//           console.log({b,a,res2})
+//         }
+//       } else {
+//         if (res !== 0) {
+//           console.log({res,a,b})
+//           return
+//         }
+//         if (res2 !== 0) {
+//           console.log({b,a,res2})
+//         }
+//       }
+//
+//     })
+// })

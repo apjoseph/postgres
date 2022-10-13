@@ -22,8 +22,8 @@ import {
 } from './types.js'
 
 import {
-  compileMetaSelectors,
-  plugins
+  registerPlugins,
+  corePlugin
 } from './dbmeta.js'
 
 import Connection from './connection.js'
@@ -51,8 +51,7 @@ Object.assign(Postgres, {
     from: [20],
     parse: x => BigInt(x), // eslint-disable-line
     serialize: x => x.toString()
-  },
-  metadataSelectors: plugins
+  }
 })
 
 export default Postgres
@@ -461,7 +460,7 @@ function parseOptions(a, b) {
     ...options,
     shared: {
       ...options.shared,
-      metadata: compileMetaSelectors(plugins,options)
+      metadata: registerPlugins([corePlugin] ,options)
     }
   }
 }
