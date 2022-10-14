@@ -3,7 +3,7 @@ import Stream from 'stream'
 export default function largeObject(sql, oid, mode = 0x00020000 | 0x00040000) {
   return new Promise(async(resolve, reject) => {
     await sql.begin(async sql => {
-      let finish
+      let finish;
       !oid && ([{ oid }] = await sql`select lo_creat(-1) as oid`)
       const [{ fd }] = await sql`select lo_open(${ oid }, ${ mode }) as fd`
 

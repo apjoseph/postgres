@@ -24,7 +24,7 @@ import {
 import {
   registerPlugins,
   corePlugin
-} from './dbmeta.js'
+} from './plugin/index.js'
 
 import Connection from './connection.js'
 import { Query, CLOSE } from './query.js'
