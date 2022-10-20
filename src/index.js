@@ -460,7 +460,7 @@ function parseOptions(a, b) {
     ...options,
     shared: {
       ...options.shared,
-      metadata: registerPlugins([corePlugin] ,options)
+      metadata: registerPlugins([corePlugin], options)
     }
   }
 }

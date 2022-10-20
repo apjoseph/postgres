@@ -1,24 +1,25 @@
-import postgres from "postgres";
+import postgres from 'postgres'
 const sql = postgres({
-  onparameter(k,v) {
-    console.log({k,v})
+  onparameter(k, v) {
+    console.log({ k, v })
   },
   types: {
     box: {
       to: 603,
       from: [603],
-      serialize: ([a,b]) => '(' + (a[0] > b[0] ? [a,b] : [b,a]).map(([x,y]) => '(' + x + "," + y +')' ).join(',') + ')',
-      parse: (x:string) => x.slice(1,-1).split('),(').map(x => x.split(',').map(x => +x))
+      serialize: ([a, b]) => '(' + (a[0] > b[0] ? [a, b] : [b, a])
+          .map(([x, y]) => '(' + x + ',' + y + ')' ).join(',') + ')',
+      parse: (x:string) => x.slice(1, -1).split('),(').map(x => x.split(',').map(x => +x))
     }
   }
-});
+})
 
-const run = async () => {
+const run = async() => {
   try {
 
     await sql.begin(async(tx) => {
 
-      const tb = sql.typed.box([[1,2],[1,3]])
+      const tb = sql.typed.box([[1, 2], [1, 3]])
 
       const out = await tx`SELECT ${tb} a`
 

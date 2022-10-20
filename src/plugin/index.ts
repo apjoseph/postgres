@@ -1,9 +1,9 @@
-import corePlugin from "./corePlugin.js";
-import {makePlugin} from "./makePlugin.js";
-import {registerPlugins} from "./registerPlugins.js";
+import corePlugin from './corePlugin.js'
+import { makePlugin } from './makePlugin.js'
+import { registerPlugins } from './registerPlugins.js'
 
 export {
-    corePlugin,
-    registerPlugins,
-    makePlugin
+  corePlugin,
+  registerPlugins,
+  makePlugin
 }

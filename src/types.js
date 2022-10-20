@@ -69,15 +69,6 @@ export class PgTypeRef extends NotTagged {
   }
 }
 
-export class PgTypeCast extends NotTagged {
-  constructor(param,targetTypeRef,options) {
-    super()
-    this.param = param
-    this.targetType = targetType
-    this.options = options
-  }
-}
-
 export class Builder extends NotTagged {
   constructor(first, rest) {
     super()

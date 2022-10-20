@@ -3,7 +3,9 @@ import tls from 'tls'
 import crypto from 'crypto'
 import Stream from 'stream'
 
-import { stringify, handleValue, arrayParser, arraySerializer, resolveParamSerializationContext } from './types.js'
+import { stringify, handleValue, resolveParamSerializationContext } from './types.js'
+import { arraySerializer } from './plugin/serialize.js'
+import { arrayParser } from './plugin/parse.js'
 import { Errors } from './errors.js'
 import Result from './result.js'
 import Queue from './queue.js'
@@ -525,7 +527,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
           return terminate()
       }
 
-      if (options.shared.metadata.needsTypes)
+      if (options.shared.metadata.needsTypes && options.fetch_types)
         return fetchArrayTypes()
 
       execute(initial)
@@ -727,51 +729,13 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
     metadata.needsTypes = false
     const metaRes = await new Query([
       options.shared.metadata.query
-    ],[],execute).raw()
+    ], [], execute).raw()
 
     const metaRow = metaRes[0]
-
-    const columns = metaRes.statement.columns
-    const output = {}
-
-    const pluginSelections = Object.values(metadata.pluginStates).flatMap(({selections,selectMetadata,name:pluginName}) => {
-      output[pluginName] = {
-        selections: {},
-        selectMetadata
-      }
-        return selections.map(({name,transformers}) => {
-          output[pluginName].selections[name] = []
-          return {
-            pluginName,
-            name,
-            transformers
-          }
-        })
-    })
-
-    let tbl
-    for (let i = 0; i < columns.length; i++) {
-      tbl = metadata.tables[i]
-
-      JSON.parse(metaRow[i]).forEach((row) => {
-        pluginSelections.forEach(({pluginName,transformers,name:selectionName}) => {
-          const selection = {}
-          transformers.forEach(({name,transform,rowIdx}) => {
-            selection[name] = transform ?  transform(row[rowIdx]) : row[rowIdx]
-          })
-          output[pluginName].selections[selectionName].push(selection)
-        })
-      })
-    }
-
-    const pluginMetadata = Object.fromEntries(
-      Object.entries(output).map(([pluginName,{selections,selectMetadata}]) => [pluginName,selectMetadata(output,selections)])
-    )
+    const pluginMetadata = options.shared.metadata.selectPluginMetadata(metaRow)
 
     Object.values(pluginMetadata.core.types).forEach(({ oid, elementTypeOid, category, delimiter }) => {
-      if (category === 'A') {
-        addArrayType(elementTypeOid, oid, delimiter)
-      }
+      if (category === 'A') addArrayType(elementTypeOid, oid, delimiter)
     })
   }
 
