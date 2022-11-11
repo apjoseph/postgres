@@ -1,3 +1,55 @@
+import { PgAttribute, PgType } from './corePlugin.js'
+
+/**
+ * Rules
+ * 1. Accumulators
+ */
+
+export interface TypeParserAccumulator<A> {
+  init:()=>A
+  acc:<E=unknown>(elem:E, acc:A, attName?:string|undefined)=>void
+  finalize:<T>(acc:A)=>T,
+  inherit:boolean
+}
+// consider using generators
+interface ArrayTypeVisitor<E, A=Array<E>> {
+  accumulator?:TypeParserAccumulator<A>
+}
+
+export interface ArrayTypeParser<E, A = Array<E>> {
+  transformElem?:(parsed:E, acc:A)=>E
+}
+
+export interface CompositeTypeParser<A = Record<string, unknown>> {
+  TransformAtt?:(parsed:unknown, acc:A, attName:string )=>unknown
+}
+
+export interface InheritedParser {
+  transformInhAtt:<V>(value:V, attName:string, valueWasNull:boolean)=>V
+}
+
+export interface RangeTypeParser<E> {
+  beforeParseBound?:(bound:string|null, inclusive:boolean, lower:boolean)=>{bound:string|null, inclusive:boolean}
+  parseBound?:(bound:string|null, inclusive:boolean, lower:boolean)=>{bound:E, inclusive:boolean}
+  afterParseBound?:(bound:E|null, inclusive:boolean, lower:boolean)=>{bound:E, inclusive:boolean}
+}
+
+export interface DomainTypeParser<T> {
+  beforeParseBase?:(value:string)=>string
+  parseBase?:(value:string)=>T
+  afterParseBase?:(value:T)=>T
+}
+
+type onArrayType = <T>(type:PgType) => ArrayTypeParser<T>
+
+
+interface ParserContext {
+  inArray:boolean
+
+
+}
+
+
 interface ParserState {
     i: number
     char:string | null

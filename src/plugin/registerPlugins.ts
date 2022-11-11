@@ -1,5 +1,5 @@
 import { escapeIdentifier } from '../types.js'
-import { PostgresFieldSelector, PostgresPlugin, PostgresRelationSelection, RelationLike } from './types.js'
+import { PostgresFieldSelector, PostgresPlugin, PostgresRelationSelection, RelationLike } from './makePlugin.js'
 
 type GenerifiedPlugin = PostgresPlugin<
     Record<string,

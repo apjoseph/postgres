@@ -18,7 +18,6 @@ export interface PgClassRef {
   namespaceOid:number
   name:string
   namespace:PgNamespace
-
 }
 
 export interface PgObjectNode {
@@ -99,87 +98,87 @@ export interface PgAttribute {
   description:string|undefined
 }
 
-const corePlugin = makePlugin('core', '1.0.0', ({ table, configure }) => {
+const corePlugin = makePlugin('core', '1.0.0', ({ relation, configure }) => {
 
-  const types = table('pg_type', 'pg_catalog', ({ addField, addIntCastField }) => {
+  const types = relation('pg_type', 'pg_catalog', ({ addField, addIntField }) => {
     return {
-      oid: addIntCastField('oid'),
+      oid: addIntField('oid'),
       name: addField<string>('typname'),
-      namespaceOid: addIntCastField('typnamespace'),
+      namespaceOid: addIntField('typnamespace'),
       category: addField<string>('typcategory'),
       type: addField<string>('typtype'),
       isDefined: addField<boolean>('typisdefined'),
-      relOid: addIntCastField('typrelid'),
-      arrayTypeOid: addIntCastField('typarray'),
-      elementTypeOid: addIntCastField('typelem'),
-      baseTypeOid: addIntCastField('typbasetype'),
+      relOid: addIntField('typrelid'),
+      arrayTypeOid: addIntField('typarray'),
+      elementTypeOid: addIntField('typelem'),
+      baseTypeOid: addIntField('typbasetype'),
       delimiter: addField<string>('typdelim'),
       notNull: addField<boolean>('typnotnull'),
-      baseTypeMod: addIntCastField('typtypmod'),
-      nDims: addIntCastField('typndims')
+      baseTypeMod: addIntField('typtypmod'),
+      nDims: addIntField('typndims')
     }
   })
 
-  const namespaces = table('pg_namespace', 'pg_catalog', ({ addField, addIntCastField }) => {
+  const namespaces = relation('pg_namespace', 'pg_catalog', ({ addField, addIntField }) => {
     return {
-      oid: addIntCastField('oid'),
+      oid: addIntField('oid'),
       name: addField<string>('nspname')
     }
   })
 
-  const descriptions = table('pg_description', 'pg_catalog', ({ addField, addIntCastField }) => {
+  const descriptions = relation('pg_description', 'pg_catalog', ({ addField, addIntField }) => {
     return {
-      objOid: addIntCastField('objoid'),
-      objSubId: addIntCastField('objsubid'),
+      objOid: addIntField('objoid'),
+      objSubId: addIntField('objsubid'),
       description: addField<string>('description')
     }
   })
 
-  const extensions = table('pg_extension', 'pg_catalog', ({ addField, addIntCastField }) => {
+  const extensions = relation('pg_extension', 'pg_catalog', ({ addField, addIntField }) => {
     return {
-      oid: addIntCastField('oid'),
+      oid: addIntField('oid'),
       name: addField<string>('extname'),
-      namespaceOid: addIntCastField('extnamespace')
+      namespaceOid: addIntField('extnamespace')
     }
   })
 
-  const classes = table('pg_class', 'pg_catalog', ({ addField, addIntCastField }) => {
+  const classes = relation('pg_class', 'pg_catalog', ({ addField, addIntField }) => {
     return {
-      oid: addIntCastField('oid'),
+      oid: addIntField('oid'),
       name: addField<string>('relname'),
-      namespaceOid: addIntCastField('relnamespace'),
+      namespaceOid: addIntField('relnamespace'),
       kind: addField<string>('relkind'),
-      typeOid: addIntCastField('reltype')
+      typeOid: addIntField('reltype')
     }
   })
 
-  const attributes = table('pg_attribute', 'pg_catalog', ({ addField, addIntCastField }) => {
+  const attributes = relation('pg_attribute', 'pg_catalog', ({ addField, addIntField }) => {
     return {
-      relOid: addIntCastField('attrelid'),
+      relOid: addIntField<number>('attrelid'),
       name: addField<string>('attname'),
-      typeOid: addIntCastField('atttypid'),
-      attNum: addIntCastField('attnum'),
-      nDims: addIntCastField('attndims'),
-      typeMod: addIntCastField('atttypmod'),
+      typeOid: addIntField('atttypid'),
+      attNum: addIntField('attnum'),
+      nDims: addIntField('attndims'),
+      typeMod: addIntField('atttypmod'),
       notNull: addField<boolean>('attnotnull'),
       hasDefinition: addField<boolean>('atthasdef'),
       hasMissing: addField<boolean>('atthasmissing'),
       identity: addField<string>('attidentity'),
       generated: addField<string>('attgenerated'),
       isLocal: addField<boolean>('attislocal'),
-      inheritCount: addIntCastField('attinhcount'),
+      inheritCount: addIntField('attinhcount'),
       isDropped: addField<boolean>('attisdropped')
     }
   })
 
-  const dependencies = table('pg_depend', 'pg_catalog', ({ addField, addIntCastField }) => {
+  const dependencies = relation('pg_depend', 'pg_catalog', ({ addField, addIntField }) => {
     return {
-      depOid: addIntCastField('objid'),
-      depAttrId: addIntCastField('objsubid'),
-      depClassOid: addIntCastField('classid'),
-      refOid: addIntCastField('refobjid'),
-      refAttrId: addIntCastField('refobjsubid'),
-      refClassOid: addIntCastField('refclassid'),
+      depOid: addIntField('objid'),
+      depAttrId: addIntField('objsubid'),
+      depClassOid: addIntField('classid'),
+      refOid: addIntField('refobjid'),
+      refAttrId: addIntField('refobjsubid'),
+      refClassOid: addIntField('refclassid'),
       depType: addField<string>('deptype')
     }
   })
